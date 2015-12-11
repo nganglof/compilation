@@ -28,7 +28,9 @@
 %token INT FLOAT VOID
 %token IF ELSE WHILE RETURN FOR
 %type <g> primary_expression postfix_expression unary_expression multiplicative_expression additive_expression
-%type <g> declarator
+%type <g> declarator declarator_list declaration declaration_list
+
+
 %start program
 %union {
   char *string;
@@ -86,7 +88,7 @@ unary_expression
   : postfix_expression { $$ = $1; }
    | INC_OP unary_expression { $$ = $2; }
    | DEC_OP unary_expression { $$ = $2; }
-   | unary_operator unary_expression {   $$.var = newvar(); 
+   | unary_operator unary_expression { $$.var = newvar(); 
   if ($2.type==INT_T) {
   $$.type=INT_T;
     asprintf(&($$.code), "%s%s = sub i32 0, %s\n", $2.code, $$.var,$2.var);
@@ -96,7 +98,7 @@ unary_expression
  } }
 ;
 
-unary_operator
+unary_operator 
 : '-'
 ;
 
@@ -144,7 +146,7 @@ additive_expression
 ;
 
 comparison_expression
-  : additive_expression { printf("%s\n",$1.code); }
+  : additive_expression {printf("%s\n",$1.code); }
 | additive_expression '<' additive_expression
 | additive_expression '>' additive_expression
 | additive_expression LE_OP additive_expression
@@ -165,14 +167,14 @@ assignment_operator
 | SUB_ASSIGN
 ;
 
-declaration
-: type_name declarator_list ';'
+declaration 
+: type_name declarator_list ';' {asprintf(&($$.code),"%s\n",($2.code));}
 | EXTERN type_name declarator_list ';'
 ;
 
 declarator_list
-: declarator
-| declarator_list ',' declarator
+: declarator {asprintf(&($$.code),"%s\n",($1.code));}
+| declarator_list ',' declarator  {asprintf(&($$.code),"%s \n%s \n",($1.code),($3.code));}
 ;
 
 type_name
@@ -192,11 +194,11 @@ declarator
       asprintf(&($$.code),"%s = alloca float\n",$$.var);      
     }
   }           
-   | '(' declarator ')'  { $$ = $2 }  
-   | declarator '[' CONSTANTI ']' { $$ = $1 }  
-   | declarator '[' ']' { $$ = $1 }            
-   | declarator '(' parameter_list ')' { $$ = $1 }  
-   | declarator '(' ')'  { $$ = $1 }             
+   | '(' declarator ')'  { $$ = $2; }  
+   | declarator '[' CONSTANTI ']' { $$ = $1; }  
+   | declarator '[' ']' { $$ = $1; }            
+   | declarator '(' parameter_list ')' { $$ = $1 ;}  
+   | declarator '(' ')'  { $$ = $1 ;}             
 ;
 
 parameter_list
@@ -219,12 +221,12 @@ statement
 compound_statement
 : '{' '}'
 | '{' statement_list '}'
-| '{' declaration_list statement_list '}'
+| '{' declaration_list statement_list '}' {printf("%s\n",$2.code); }
 ;
 
 declaration_list
-: declaration
-| declaration_list declaration
+: declaration {asprintf(&($$.code),"%s\n",($1.code));}
+| declaration_list declaration {asprintf(&($$.code),"%s\n%s\n",($1.code),$2.code);}
 ;
 
 statement_list
@@ -253,7 +255,7 @@ jump_statement
 | RETURN expression ';'
 ;
 
-program
+program 
 : external_declaration
 | program external_declaration
 ;
