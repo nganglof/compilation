@@ -29,6 +29,7 @@
 %token IF ELSE WHILE RETURN FOR
 %type <g> primary_expression postfix_expression unary_expression multiplicative_expression additive_expression
 %type <g> declarator declarator_list declaration declaration_list
+%type <g> comparison_expression expression
 
 
 %start program
@@ -43,17 +44,21 @@
 
 primary_expression
 : IDENTIFIER  {
+
   gen_t g = findtab($1);
   char *nv= newvar();
   $$.var = nv;
   if ( g.type == INT_T){
     $$.type = INT_T;
+
     asprintf(&($$.code), "%s = load i32* %s\n", nv,g.var);
   }
   else{
     $$.type = FLOAT_T;
     asprintf(&($$.code), "%s = load float* %s\n", nv,g.var);
   }
+    $$.name = $1;
+
  } 
 | CONSTANTI   {
   $$.var=newvar(); 
@@ -75,7 +80,7 @@ primary_expression
 ;
 
 postfix_expression
-  : primary_expression { $$ = $1; }
+  : primary_expression  {asprintf(&($$.code),"%s\n",($1.code));}
    | postfix_expression '[' expression ']' { $$ = $1; }
 ;
 
@@ -88,7 +93,8 @@ unary_expression
   : postfix_expression { $$ = $1; }
    | INC_OP unary_expression { $$ = $2; }
    | DEC_OP unary_expression { $$ = $2; }
-   | unary_operator unary_expression { $$.var = newvar(); 
+   | unary_operator unary_expression {
+  $$.var = newvar(); 
   if ($2.type==INT_T) {
   $$.type=INT_T;
     asprintf(&($$.code), "%s%s = sub i32 0, %s\n", $2.code, $$.var,$2.var);
@@ -146,18 +152,30 @@ additive_expression
 ;
 
 comparison_expression
-  : additive_expression {printf("%s\n",$1.code); }
-| additive_expression '<' additive_expression
-| additive_expression '>' additive_expression
-| additive_expression LE_OP additive_expression
-| additive_expression GE_OP additive_expression
-| additive_expression EQ_OP additive_expression
-| additive_expression NE_OP additive_expression
+: additive_expression {$$ = $1; }
+| additive_expression '<' additive_expression {printf("TODO COMPARAISON \n");}
+| additive_expression '>' additive_expression {printf("TODO COMPARAISON \n");}
+| additive_expression LE_OP additive_expression {printf("TODO COMPARAISON \n");}
+| additive_expression GE_OP additive_expression {printf("TODO COMPARAISON \n");}
+| additive_expression EQ_OP additive_expression {printf("TODO COMPARAISON \n");}
+| additive_expression NE_OP additive_expression {printf("TODO COMPARAISON \n");}
 ;
 
 expression
-: unary_expression assignment_operator comparison_expression
-| comparison_expression
+: unary_expression assignment_operator comparison_expression {
+  printf("CODE UNARA : %s\n",$1.code);
+  gen_t unary = findtab($1.name);
+  printf("CODEEEEE %s\n",unary.code);
+  if(isEmpty(&unary)){
+    printf("ERREUR : variable non initialisée\n");
+  }
+  else{
+    $$.var = unary.var;
+    asprintf(&($$.code), "%s%s%s = load i32* %s\n", $1.code, $3.code,$$.var,$3.var);
+  }
+
+}
+| comparison_expression {$$ = $1 ;}
 ;
 
 assignment_operator
@@ -173,7 +191,7 @@ declaration
 ;
 
 declarator_list
-: declarator {asprintf(&($$.code),"%s\n",($1.code));}
+: declarator {$$ = $1;}
 | declarator_list ',' declarator  {asprintf(&($$.code),"%s \n%s \n",($1.code),($3.code));}
 ;
 
@@ -193,6 +211,7 @@ declarator
     else{
       asprintf(&($$.code),"%s = alloca float\n",$$.var);      
     }
+
   }           
    | '(' declarator ')'  { $$ = $2; }  
    | declarator '[' CONSTANTI ']' { $$ = $1; }  
@@ -236,7 +255,7 @@ statement_list
 
 expression_statement
 : ';'
-| expression ';'
+| expression ';' {printf("code : %s",$1.code);}
 ;
 
 selection_statement
