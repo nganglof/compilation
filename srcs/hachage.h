@@ -12,6 +12,6 @@
 	gen_t findtab(char *s);
 	void addtab(char *s,int type, char* var);
 	void init();
-	int isEmpty(gen_t* g);
+	int isPresent(char* s);
 
 #endif

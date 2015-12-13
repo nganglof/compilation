@@ -14,12 +14,10 @@ void viewhach(){
 
 }
 
-int isEmpty(gen_t * g){
-
-	printf("%s\n",g->code);
-
-	printf("g : %s %s\n",g->name,g->var);
-
+// 1 if present, 0 if not
+int isPresent(char *s){
+  gen_t present = findtab(s);
+  return !(strcmp(present.name,"")==0 && strcmp(present.var,"")==0 &&  present.type==0 );
 }
 
 int hachage(char *s) {
@@ -35,6 +33,7 @@ void addtab(char *name,int type, char *var) {
   gen_t *h=&hachtab[hachage(name)];
   h->name=name; h->type=type; h->code=NULL; h->var=var;
 }
+
 void init() {
   int i;
   for (i=0; i<SIZE; i++) hachtab[i]=EMPTY_H;

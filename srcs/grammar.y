@@ -15,6 +15,7 @@
     }
     gen_t EMPTY= {"", INT_T, "" } ;
     base basetype;
+    int assignement;
 
 %}
 
@@ -31,7 +32,6 @@
 %type <g> declarator declarator_list declaration declaration_list
 %type <g> comparison_expression expression
 
-
 %start program
 %union {
   char *string;
@@ -44,6 +44,8 @@
 
 primary_expression
 : IDENTIFIER  {
+
+  //si coté gauche du egal, pas besoin d'afficher !
 
   gen_t g = findtab($1);
   char *nv= newvar();
@@ -80,7 +82,7 @@ primary_expression
 ;
 
 postfix_expression
-  : primary_expression  {asprintf(&($$.code),"%s\n",($1.code));}
+  : primary_expression  {$$=$1;}
    | postfix_expression '[' expression ']' { $$ = $1; }
 ;
 
@@ -163,26 +165,45 @@ comparison_expression
 
 expression
 : unary_expression assignment_operator comparison_expression {
-  printf("CODE UNARA : %s\n",$1.code);
-  gen_t unary = findtab($1.name);
-  printf("CODEEEEE %s\n",unary.code);
-  if(isEmpty(&unary)){
+  //printf("CODE UNARY : %s\n",$1.code);
+  if(!isPresent($1.name)){
     printf("ERREUR : variable non initialisée\n");
   }
   else{
-    $$.var = unary.var;
-    asprintf(&($$.code), "%s%s%s = load i32* %s\n", $1.code, $3.code,$$.var,$3.var);
-  }
 
+    gen_t unary = findtab($1.name);
+    $$.var = unary.var;
+
+    switch(assignement){
+      case 0:
+        //assignement =
+        //selon type /!\
+        asprintf(&($$.code), "%s%sstore i32 %s, i32* %s\n", $1.code, $3.code,$3.var,$$.var);
+        break;
+
+
+      case 1:
+        //assignement MUL_ASSIGN
+        break;
+
+      case 2:
+        //assignement ADD_ASSIGN
+        break;
+
+      case 3:
+        //assignement Sub_ASSIGN
+        break;
+    }   
+  }
 }
 | comparison_expression {$$ = $1 ;}
 ;
 
 assignment_operator
-: '='
-| MUL_ASSIGN
-| ADD_ASSIGN
-| SUB_ASSIGN
+: '='         {assignement=0;}    
+| MUL_ASSIGN  {assignement=1;}
+| ADD_ASSIGN  {assignement=2;}
+| SUB_ASSIGN  {assignement=3;}
 ;
 
 declaration 
@@ -211,7 +232,6 @@ declarator
     else{
       asprintf(&($$.code),"%s = alloca float\n",$$.var);      
     }
-
   }           
    | '(' declarator ')'  { $$ = $2; }  
    | declarator '[' CONSTANTI ']' { $$ = $1; }  
@@ -240,11 +260,11 @@ statement
 compound_statement
 : '{' '}'
 | '{' statement_list '}'
-| '{' declaration_list statement_list '}' {printf("%s\n",$2.code); }
+| '{' declaration_list statement_list '}' {printf("%s\n",$2.code);}
 ;
 
 declaration_list
-: declaration {asprintf(&($$.code),"%s\n",($1.code));}
+: declaration {$$=$1;}
 | declaration_list declaration {asprintf(&($$.code),"%s\n%s\n",($1.code),$2.code);}
 ;
 
@@ -255,7 +275,7 @@ statement_list
 
 expression_statement
 : ';'
-| expression ';' {printf("code : %s",$1.code);}
+| expression ';' {printf("code :\n%s" , $1.code) ;}
 ;
 
 selection_statement
