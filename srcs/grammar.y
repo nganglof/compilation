@@ -70,7 +70,7 @@ primary_expression
 | CONSTANTF    {
   $$.var=newvar(); 
   $$.type=FLOAT_T;
-  asprintf(&($$.code), "%s = fadd float 0, %f\n", $$.var,$1);
+  asprintf(&($$.code), "%s = fadd float 0.0, %f\n", $$.var,$1);
  }
 | '(' expression ')' { $$ = EMPTY; } 
 | MAP '(' postfix_expression ',' postfix_expression ')' { $$ = EMPTY; } 
@@ -115,42 +115,82 @@ multiplicative_expression
 | multiplicative_expression '*' unary_expression { 
   $$.var = newvar(); 
   if ($1.type==INT_T && $3.type==INT_T) {
-  $$.type=INT_T;
-    asprintf(&($$.code), "%s%s%s = mul i32 %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
- } else {
-  $$.type=FLOAT_T;
-    asprintf(&($$.code), "%s%s%s = fmul float %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
- } }
-| multiplicative_expression '/' unary_expression { 
-  $$.var = newvar(); 
-  if ($1.type==INT_T && $3.type==INT_T) {
-  $$.type=INT_T;
-    asprintf(&($$.code), "%s%s%s = sdiv i32 %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
- } else {
-  $$.type=FLOAT_T;
-    asprintf(&($$.code), "%s%s%s = fdiv float %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
- } }
+      $$.type=INT_T;
+      asprintf(&($$.code), "%s%s%s = mul i32 %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
+  }
+  else if ($1.type==FLOAT_T && $3.type==FLOAT_T) {
+      $$.type=FLOAT_T;
+      asprintf(&($$.code), "%s%s%s = fmul float %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
+     
+  }
+  else{
+      gen_t conv;
+      conv.var = newvar();
+      $$.type=FLOAT_T;
+      if($3.type==INT_T){
+          asprintf(&(conv.code),  "%s%s%s = sitofp i32 %s to float\n", $1.code, $3.code,conv.var,$3.var);
+          asprintf(&($$.code),    "%s%s = fmul float %s, %s\n", conv.code,$$.var,$1.var,conv.var);
+      }      
+      else if($1.type==INT_T){
+          asprintf(&(conv.code),  "%s%s%s = sitofp i32 %s to float\n", $1.code, $3.code,conv.var,$1.var);  
+          asprintf(&($$.code),    "%s%s = fmul float %s, %s\n", conv.code,$$.var,conv.var,$3.var);
+      }                  
+  } 
+ }
 ;
 
 additive_expression
-  : multiplicative_expression { $$ = $1; } 
-     | additive_expression '+' multiplicative_expression { 
+: multiplicative_expression { $$ = $1; } 
+| additive_expression '+' multiplicative_expression { 
   $$.var = newvar(); 
   if ($1.type==INT_T && $3.type==INT_T) {
-  $$.type=INT_T;
-    asprintf(&($$.code), "%s%s%s = add i32 %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
- } else {
-  $$.type=FLOAT_T;
-    asprintf(&($$.code), "%s%s%s = fadd float %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
- } 
+      $$.type=INT_T;
+      asprintf(&($$.code), "%s%s%s = add i32 %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
+  }
+  else if ($1.type==FLOAT_T && $3.type==FLOAT_T) {
+      $$.type=FLOAT_T;
+      asprintf(&($$.code), "%s%s%s = fadd float %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
+     
+  }
+  else{
+      gen_t conv;
+      conv.var = newvar();
+      $$.type=FLOAT_T;
+      if($3.type==INT_T){
+          asprintf(&(conv.code),  "%s%s%s = sitofp i32 %s to float\n", $1.code, $3.code,conv.var,$3.var);
+          asprintf(&($$.code),    "%s%s = fadd float %s, %s\n", conv.code,$$.var,$1.var,conv.var);
+      }      
+      else if($1.type==INT_T){
+          asprintf(&(conv.code),  "%s%s%s = sitofp i32 %s to float\n", $1.code, $3.code,conv.var,$1.var);  
+          asprintf(&($$.code),    "%s%s = fadd float %s, %s\n", conv.code,$$.var,conv.var,$3.var);
+      }                  
+  } 
  }
 | additive_expression '-' multiplicative_expression { 
   $$.var = newvar(); 
   if ($1.type==INT_T && $3.type==INT_T) {
-    asprintf(&($$.code), "%s%s%s = sub i32 %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
- } else {
-    asprintf(&($$.code), "%s%s%s = fsub float %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
- } }
+      $$.type=INT_T;
+      asprintf(&($$.code), "%s%s%s = sub i32 %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
+  }
+  else if ($1.type==FLOAT_T && $3.type==FLOAT_T) {
+      $$.type=FLOAT_T;
+      asprintf(&($$.code), "%s%s%s = fsub float %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
+     
+  }
+  else{
+      gen_t conv;
+      conv.var = newvar();
+      $$.type=FLOAT_T;
+      if($3.type==INT_T){
+          asprintf(&(conv.code),  "%s%s%s = sitofp i32 %s to float\n", $1.code, $3.code,conv.var,$3.var);
+          asprintf(&($$.code),    "%s%s = fsub float %s, %s\n", conv.code,$$.var,$1.var,conv.var);
+      }      
+      else if($1.type==INT_T){
+          asprintf(&(conv.code),  "%s%s%s = sitofp i32 %s to float\n", $1.code, $3.code,conv.var,$1.var);  
+          asprintf(&($$.code),    "%s%s = fsub float %s, %s\n", conv.code,$$.var,conv.var,$3.var);
+      }                  
+  } 
+ }
 ;
 
 comparison_expression
@@ -177,8 +217,28 @@ expression
     switch(assignement){
       case 0:
         //assignement =
-        //selon type /!\
-        asprintf(&($$.code), "%s%sstore i32 %s, i32* %s\n", $1.code, $3.code,$3.var,$$.var);
+            if($1.type == INT_T){
+              if(($3.type)==FLOAT_T){
+                gen_t conv;
+                conv.var = newvar();
+                asprintf(&(conv.code),"%s%s%s = fptosi float %s to i32\n", $1.code, $3.code,conv.var,$3.var);
+                asprintf(&($$.code), "%sstore i32 %s, i32* %s\n", conv.code, conv.var,$$.var);
+              }
+              else {
+                asprintf(&($$.code), "%s%sstore i32 %s, i32* %s\n", $1.code, $3.code,$3.var,$$.var);
+              }
+            }
+            else if($1.type == FLOAT_T){
+              if(($3.type)==INT_T){
+                gen_t conv;
+                conv.var = newvar();
+                asprintf(&(conv.code),  "%s%s%s = sitofp i32 %s to float\n", $1.code, $3.code,conv.var,$3.var);
+                asprintf(&($$.code), "%sstore float %s, float* %s\n", conv.code, conv.var,$$.var);
+              }
+              else {
+                asprintf(&($$.code), "%s%sstore float %s, float* %s\n", $1.code, $3.code,$3.var,$$.var);
+              }
+            }
         break;
 
 
@@ -275,7 +335,7 @@ statement_list
 
 expression_statement
 : ';'
-| expression ';' {printf("code :\n%s" , $1.code) ;}
+| expression ';' {printf("\n%s" , $1.code) ;}
 ;
 
 selection_statement
