@@ -13,10 +13,10 @@
       asprintf(&s,"%%x%d",i++);
       return s;
     }
-    gen_t EMPTY= {"", INT_T, "" } ;
-    base basetype;
-    int assignement;
 
+    gen_t EMPTY= {"", INT_T, "" } ;
+    base_t base_type;
+    int allocation_size;
 %}
 
 %token <string> IDENTIFIER
@@ -31,13 +31,15 @@
 %type <g> primary_expression postfix_expression unary_expression multiplicative_expression additive_expression
 %type <g> declarator declarator_list declaration declaration_list
 %type <g> comparison_expression expression
-
+%type <a> assignment_operator
 %start program
 %union {
   char *string;
   int n;
   float f;
   gen_t g;
+  base_t b;
+  assign_t a;
 }
 %%
 
@@ -45,7 +47,8 @@
 primary_expression
 : IDENTIFIER  {
 
-  //si coté gauche du egal, pas besoin d'afficher !
+  if(!isPresent($1))
+    printf("ERREUR : variable non initialisée\n");
 
   gen_t g = findtab($1);
   char *nv= newvar();
@@ -68,9 +71,9 @@ primary_expression
   asprintf(&($$.code), "%s = add i32 0, %d\n", $$.var,$1);
  }
 | CONSTANTF    {
-  $$.var=newvar(); 
-  $$.type=FLOAT_T;
-  asprintf(&($$.code), "%s = fadd float 0.0, %f\n", $$.var,$1);
+    $$.var=newvar(); 
+    $$.type=FLOAT_T;
+    asprintf(&($$.code), "%s = fadd float 0.0, %f\n", $$.var,$1);
  }
 | '(' expression ')' { $$ = EMPTY; } 
 | MAP '(' postfix_expression ',' postfix_expression ')' { $$ = EMPTY; } 
@@ -78,7 +81,7 @@ primary_expression
 | IDENTIFIER '(' ')' { $$ = EMPTY; } 
 | IDENTIFIER '(' argument_expression_list ')' { $$ = EMPTY; } 
 | IDENTIFIER INC_OP  { $$ = EMPTY; } 
-     | IDENTIFIER DEC_OP { $$ = EMPTY; }  
+| IDENTIFIER DEC_OP { $$ = EMPTY; }  
 ;
 
 postfix_expression
@@ -167,30 +170,30 @@ additive_expression
   } 
  }
 | additive_expression '-' multiplicative_expression { 
-  $$.var = newvar(); 
-  if ($1.type==INT_T && $3.type==INT_T) {
-      $$.type=INT_T;
-      asprintf(&($$.code), "%s%s%s = sub i32 %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
+    $$.var = newvar(); 
+    if ($1.type==INT_T && $3.type==INT_T) {
+        $$.type=INT_T;
+        asprintf(&($$.code), "%s%s%s = sub i32 %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
+    }
+    else if ($1.type==FLOAT_T && $3.type==FLOAT_T) {
+        $$.type=FLOAT_T;
+        asprintf(&($$.code), "%s%s%s = fsub float %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
+       
+    }
+    else{
+        gen_t conv;
+        conv.var = newvar();
+        $$.type=FLOAT_T;
+        if($3.type==INT_T){
+            asprintf(&(conv.code),  "%s%s%s = sitofp i32 %s to float\n", $1.code, $3.code,conv.var,$3.var);
+            asprintf(&($$.code),    "%s%s = fsub float %s, %s\n", conv.code,$$.var,$1.var,conv.var);
+        }      
+        else if($1.type==INT_T){
+            asprintf(&(conv.code),  "%s%s%s = sitofp i32 %s to float\n", $1.code, $3.code,conv.var,$1.var);  
+            asprintf(&($$.code),    "%s%s = fsub float %s, %s\n", conv.code,$$.var,conv.var,$3.var);
+        }                  
+    } 
   }
-  else if ($1.type==FLOAT_T && $3.type==FLOAT_T) {
-      $$.type=FLOAT_T;
-      asprintf(&($$.code), "%s%s%s = fsub float %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
-     
-  }
-  else{
-      gen_t conv;
-      conv.var = newvar();
-      $$.type=FLOAT_T;
-      if($3.type==INT_T){
-          asprintf(&(conv.code),  "%s%s%s = sitofp i32 %s to float\n", $1.code, $3.code,conv.var,$3.var);
-          asprintf(&($$.code),    "%s%s = fsub float %s, %s\n", conv.code,$$.var,$1.var,conv.var);
-      }      
-      else if($1.type==INT_T){
-          asprintf(&(conv.code),  "%s%s%s = sitofp i32 %s to float\n", $1.code, $3.code,conv.var,$1.var);  
-          asprintf(&($$.code),    "%s%s = fsub float %s, %s\n", conv.code,$$.var,conv.var,$3.var);
-      }                  
-  } 
- }
 ;
 
 comparison_expression
@@ -205,65 +208,50 @@ comparison_expression
 
 expression
 : unary_expression assignment_operator comparison_expression {
-  //printf("CODE UNARY : %s\n",$1.code);
-  if(!isPresent($1.name)){
-    printf("ERREUR : variable non initialisée\n");
-  }
-  else{
-
     gen_t unary = findtab($1.name);
     $$.var = unary.var;
 
-    switch(assignement){
-      case 0:
-        //assignement =
-            if($1.type == INT_T){
-              if(($3.type)==FLOAT_T){
-                gen_t conv;
-                conv.var = newvar();
-                asprintf(&(conv.code),"%s%s%s = fptosi float %s to i32\n", $1.code, $3.code,conv.var,$3.var);
-                asprintf(&($$.code), "%sstore i32 %s, i32* %s\n", conv.code, conv.var,$$.var);
-              }
-              else {
-                asprintf(&($$.code), "%s%sstore i32 %s, i32* %s\n", $1.code, $3.code,$3.var,$$.var);
-              }
-            }
-            else if($1.type == FLOAT_T){
-              if(($3.type)==INT_T){
-                gen_t conv;
-                conv.var = newvar();
-                asprintf(&(conv.code),  "%s%s%s = sitofp i32 %s to float\n", $1.code, $3.code,conv.var,$3.var);
-                asprintf(&($$.code), "%sstore float %s, float* %s\n", conv.code, conv.var,$$.var);
-              }
-              else {
-                asprintf(&($$.code), "%s%sstore float %s, float* %s\n", $1.code, $3.code,$3.var,$$.var);
-              }
-            }
+    switch($2) {
+      case ASSIGN_T:
+        if($1.type == INT_T){
+          if(($3.type)==FLOAT_T){
+            gen_t conv;
+            conv.var = newvar();
+            asprintf(&(conv.code),"%s%s%s = fptosi float %s to i32\n", $1.code, $3.code,conv.var,$3.var);
+            asprintf(&($$.code), "%sstore i32 %s, i32* %s\n", conv.code, conv.var,$$.var);
+          } else {
+            asprintf(&($$.code), "%s%sstore i32 %s, i32* %s\n", $1.code, $3.code,$3.var,$$.var);
+          }
+        } else if($1.type == FLOAT_T){
+          if(($3.type)==INT_T){
+            gen_t conv;
+            conv.var = newvar();
+            asprintf(&(conv.code),  "%s%s%s = sitofp i32 %s to float\n", $1.code, $3.code,conv.var,$3.var);
+            asprintf(&($$.code), "%sstore float %s, float* %s\n", conv.code, conv.var,$$.var);
+          } else {
+            asprintf(&($$.code), "%s%sstore float %s, float* %s\n", $1.code, $3.code,$3.var,$$.var);
+          }
+        }
         break;
 
-
-      case 1:
-        //assignement MUL_ASSIGN
+      case MUL_ASSIGN_T:
         break;
 
-      case 2:
-        //assignement ADD_ASSIGN
+      case ADD_ASSIGN_T:
         break;
 
-      case 3:
-        //assignement Sub_ASSIGN
+      case SUB_ASSIGN_T:
         break;
     }   
   }
-}
 | comparison_expression {$$ = $1 ;}
 ;
 
 assignment_operator
-: '='         {assignement=0;}    
-| MUL_ASSIGN  {assignement=1;}
-| ADD_ASSIGN  {assignement=2;}
-| SUB_ASSIGN  {assignement=3;}
+: '='         {$$=ASSIGN_T;}    
+| MUL_ASSIGN  {$$=MUL_ASSIGN_T;}
+| ADD_ASSIGN  {$$=ADD_ASSIGN_T;}
+| SUB_ASSIGN  {$$=SUB_ASSIGN_T;}
 ;
 
 declaration 
@@ -272,32 +260,40 @@ declaration
 ;
 
 declarator_list
-: declarator {$$ = $1;}
-| declarator_list ',' declarator  {asprintf(&($$.code),"%s \n%s \n",($1.code),($3.code));}
+: declarator {
+    if(base_type == INT_T)
+      asprintf(&($$.code), "%s = alloca [%d x i32]", $1.var, allocation_size);
+    else
+      asprintf(&($$.code), "%s = alloca [%d x float]", $1.var, allocation_size);
+  }
+| declarator_list ',' declarator  {
+    if(base_type == INT_T)
+      asprintf(&($$.code), "%s\n%s = alloca [%d x i32]", $1.code, $3.var, allocation_size);
+    else
+      asprintf(&($$.code), "%s\n%s = alloca [%d x float]", $1.code, $3.var, allocation_size);
+  }
 ;
 
 type_name
-  : VOID {basetype = VOID_T;}
-   | INT  {basetype = INT_T;}
-   | FLOAT {basetype = FLOAT;}
+: VOID  {base_type = VOID_T;}
+| INT   {base_type = INT_T;}
+| FLOAT {base_type = FLOAT_T;}
 ;
 
 declarator
-  : IDENTIFIER  {
+: IDENTIFIER {
+    allocation_size = 1;
     $$.var = newvar();
-    addtab($1,basetype,$$.var);
-    if ( basetype == INT_T){
-      asprintf(&($$.code),"%s = alloca i32\n",$$.var);
-    }
-    else{
-      asprintf(&($$.code),"%s = alloca float\n",$$.var);      
-    }
+    addtab($1, base_type, $$.var);
   }           
-   | '(' declarator ')'  { $$ = $2; }  
-   | declarator '[' CONSTANTI ']' { $$ = $1; }  
-   | declarator '[' ']' { $$ = $1; }            
-   | declarator '(' parameter_list ')' { $$ = $1 ;}  
-   | declarator '(' ')'  { $$ = $1 ;}             
+| '(' declarator ')'                { $$ = $2; }
+| declarator '[' CONSTANTI ']' {
+    allocation_size = $3;
+    $$.var = $1.var;
+  }
+| declarator '[' ']'                { $$ = $1; }  
+| declarator '(' parameter_list ')' { $$ = $1 ;}  
+| declarator '(' ')'                { $$ = $1 ;}             
 ;
 
 parameter_list
