@@ -1,6 +1,7 @@
 %{
     #include <stdio.h>
     #include "parse.h"
+    #include <string.h>
     #include "hachage.h"
 
     extern int yylineno;
@@ -13,6 +14,13 @@
       asprintf(&s,"%%x%d",i++);
       return s;
     }
+
+    char *newlabel() {
+      static int i=0;
+      char *s = NULL;
+      asprintf(&s,"label%d",i++);
+      return s;
+    }    
 
     gen_t EMPTY= {"", INT_T, "" } ;
     base_t base_type;
@@ -31,8 +39,14 @@
 %token IF ELSE WHILE RETURN FOR
 %type <g> primary_expression postfix_expression unary_expression multiplicative_expression additive_expression
 %type <g> declarator declarator_list declaration declaration_list
-%type <g> comparison_expression expression
-%type <a> assignment_operator
+%type <g> comparison_expression expression argument_expression_list
+%type <g> statement_list statement compound_statement jump_statement selection_statement expression_statement iteration_statement
+
+
+%type <g> program external_declaration function_definition
+%type <g> parameter_list parameter_declaration
+
+%type <a> assignment_operator 
 %start program
 %union {
   char *string;
@@ -47,7 +61,22 @@
 
 primary_expression
 : IDENTIFIER  {
-		if(isPresent($1)) {
+
+
+  gen_t g = findtab($1);
+  char *nv= newvar();
+  $$.var = nv;
+  if ( g.type == INT_T){
+    $$.type = INT_T;
+
+    asprintf(&($$.code), "%s = load i32* %s\n", nv,g.var);
+  }
+  else{
+    $$.type = FLOAT_T;
+    asprintf(&($$.code), "%s = load float* %s\n", nv,g.var);
+  }
+   $$.name = $1;
+		/*if(isPresent($1)) {
 			gen_t g = findtab($1);
 			$$.var = g.var;
 			$$.type = g.type;
@@ -55,7 +84,7 @@ primary_expression
 			$$.code = "";
 		} else {
 			printf("ERREUR : variable non initialisée\n");
-		}
+		}*/
 	}
 | CONSTANTI {
 		$$.var = newvar(); 
@@ -93,14 +122,77 @@ postfix_expression
 ;
 
 argument_expression_list
-: expression
-| argument_expression_list ',' expression
+: expression { $$ = $1; }
+| argument_expression_list ',' expression {
+	$$.var = newvar(); 
+	asprintf(&($$.code), "%s%s\n",$1.code,$3.code);
+}
 ;
 
 unary_expression
 : postfix_expression { $$ = $1; }
-| INC_OP unary_expression { $$ = $2; }
-| DEC_OP unary_expression { $$ = $2; }
+| INC_OP unary_expression {
+
+	//bug et si pas present ?
+    gen_t unary = findtab($2.name);
+    $$.var = unary.var;
+
+
+	if($2.type == INT_T){
+
+		// bug plus de code dans unary...
+		//gen_t load;
+		//load.var = newvar();
+		gen_t inc;
+		inc.var = newvar();
+		//asprintf(&($$.code), "%s = load i32* %s\n%s = add i32 %s, 1\nstore i32 %s, i32* %s", load.var,$2.var,inc.var,load.var,inc.var,$$.var);
+		asprintf(&($$.code), "%s%s = add i32 %s, 1\nstore i32 %s, i32* %s",$2.code,inc.var,$2.var,inc.var,$$.var);
+		
+		$$.name = $2.name;
+
+	}
+	else if($2.type==FLOAT_T){
+
+		// bug plus de code dans unary...
+		//gen_t load;
+		//load.var = newvar();
+		gen_t inc;
+		inc.var = newvar();
+		//asprintf(&($$.code), "%s = load float* %s\n%s = fadd float %s, 1.0\nstore float %s, float* %s", load.var,$2.var,inc.var,load.var,inc.var,$$.var);
+		asprintf(&($$.code), "%s%s = fadd float %s, 1.0\nstore float %s, float* %s",$2.code, inc.var,$2.var,inc.var,$$.var);
+		
+		$$.name = $2.name;
+
+	}
+	else
+		printf("operation interdite sur ce type\n");
+}
+| DEC_OP unary_expression {	
+	if($2.type == INT_T){
+
+		// bug plus de code dans unary...
+		gen_t load;
+		load.var = newvar();
+		gen_t inc;
+		inc.var = newvar();
+		asprintf(&($$.code), "%s = load i32* %s\n%s = sub i32 %s, 1\nstore i32 %s, i32* %s", load.var,$2.var,inc.var,load.var,inc.var,$$.var);
+		$$.name = $2.name;
+
+	}
+	else if($2.type==FLOAT_T){
+
+		// bug plus de code dans unary...
+		gen_t load;
+		load.var = newvar();
+		gen_t inc;
+		inc.var = newvar();
+		asprintf(&($$.code), "%s = load float* %s\n%s = fsub float %s, 1.0\nstore float %s, float* %s", load.var,$2.var,inc.var,load.var,inc.var,$$.var);
+		$$.name = $2.name;
+
+	}
+	else
+		printf("operation interdite sur ce type\n");
+}
 | unary_operator unary_expression {
 		$$.var = newvar(); 
 		if ($2.type==INT_T) {
@@ -119,7 +211,7 @@ unary_operator
 
 multiplicative_expression
 : unary_expression {
-		if(strcmp($1.name, "")) {
+		/*if(strcmp($1.name, "")) {
 			$$.var = newvar();
 			$$.name = $1.name;
 			$$.type = $1.type;
@@ -128,7 +220,9 @@ multiplicative_expression
 			} else {
 				asprintf(&($$.code), "%s%s = load float* %s\n", $1.code, $$.var, $1.var);
 			}
-		}
+
+		}*/
+		$$ = $1;
 	} 
 | multiplicative_expression '*' unary_expression { 
 		gen_t g = $3;
@@ -212,18 +306,45 @@ additive_expression
 
 comparison_expression
 : additive_expression {$$ = $1; }
-| additive_expression '<' additive_expression {printf("TODO COMPARAISON \n");}
-| additive_expression '>' additive_expression {printf("TODO COMPARAISON \n");}
-| additive_expression LE_OP additive_expression {printf("TODO COMPARAISON \n");}
-| additive_expression GE_OP additive_expression {printf("TODO COMPARAISON \n");}
-| additive_expression EQ_OP additive_expression {printf("TODO COMPARAISON \n");}
-| additive_expression NE_OP additive_expression {printf("TODO COMPARAISON \n");}
+| additive_expression '<' additive_expression {
+  $$.var = newvar();
+
+  //bug plus de load* :(
+  if($$.type == INT_T) {
+  	asprintf(&($$.code), "%s%s = load i32* %s\n", $1.code, $$.var, $1.var);
+  } else {
+  	asprintf(&($$.code), "%s%s = load float* %s\n", $1.code, $$.var, $1.var);
+  }
+
+  asprintf(&($$.code),"%s%s%s = icmp slt i32 %s, %s\n",$1.code, $3.code,$$.var,$1.var,$3.var);
+}
+| additive_expression '>' additive_expression {
+  $$.var = newvar();
+  asprintf(&($$.code),"%s%s%s = icmp sgt i32 %s, %s\n",$1.code, $3.code,$$.var,$1.var,$3.var);
+}
+| additive_expression LE_OP additive_expression {
+  $$.var = newvar();
+  asprintf(&($$.code),"%s%s%s = icmp use i32 %s, %s\n",$1.code, $3.code,$$.var,$1.var,$3.var);
+}
+| additive_expression GE_OP additive_expression {
+  $$.var = newvar();
+  asprintf(&($$.code),"%s%s%s = icmp sge i32 %s, %s\n",$1.code, $3.code,$$.var,$1.var,$3.var);
+}
+| additive_expression EQ_OP additive_expression {
+  $$.var = newvar();
+  asprintf(&($$.code),"%s%s%s = icmp eq i32 %s, %s\n",$1.code, $3.code,$$.var,$1.var,$3.var);
+}
+| additive_expression NE_OP additive_expression {
+  $$.var = newvar();
+  asprintf(&($$.code),"%s%s%s = icmp ne i32 %s, %s\n",$1.code, $3.code,$$.var,$1.var,$3.var);
+}
 ;
 
 expression
 : unary_expression assignment_operator comparison_expression {
-    $$.var = $1.var;
-
+    gen_t unary = findtab($1.name);
+    $$.var = unary.var;
+    	//bug attention $$.var -> $1;var
 		//asprintf(&($$.code), "%s%s%s = getelementptr i32* %s, i32 %s\n", $1.code, $3.code, $$.var, $1.var, $3.var);
 
     switch($2) {
@@ -250,12 +371,150 @@ expression
         break;
 
       case MUL_ASSIGN_T:
+      
+      //BUG : faire conversion apres multiplication
+
+        if($1.type == INT_T){
+          if(($3.type)==FLOAT_T){
+            gen_t conv;
+            conv.var = newvar();
+            asprintf(&(conv.code),"%s%s%s = fptosi float %s to i32\n", $1.code, $3.code,conv.var,$3.var);
+
+			gen_t step1;
+			gen_t step2;
+			step1.var = newvar();
+			step2.var = newvar();
+
+            asprintf(&($$.code), "%s%s = load i32* %s\n%s = mul i32 %s, %s\nstore i32 %s, i32* %s\n", conv.code, step1.var,$$.var,step2.var,step1.var,conv.var,step2.var, $$.var);
+          } else {
+
+			gen_t step1;
+			gen_t step2;
+			step1.var = newvar();
+			step2.var = newvar();
+
+            asprintf(&($$.code), "%s%s%s = load i32* %s\n%s = mul i32 %s, %s\nstore i32 %s, i32* %s\n", $1.code, $3.code, step1.var,$$.var,step2.var,step1.var,$3.var,step2.var, $$.var);
+          }
+        } else if($1.type == FLOAT_T){
+          if(($3.type)==INT_T){
+            gen_t conv;
+            conv.var = newvar();
+            asprintf(&(conv.code),  "%s%s%s = sitofp i32 %s to float\n", $1.code, $3.code, conv.var, $3.var);
+
+			gen_t step1;
+			gen_t step2;
+			step1.var = newvar();
+			step2.var = newvar();
+
+            asprintf(&($$.code), "%s%s = load float* %s\n%s = fmul float %s, %s\nstore float %s, float* %s\n", conv.code, step1.var,$$.var,step2.var,step1.var,conv.var,step2.var, $$.var);
+          } else {
+
+ 			gen_t step1;
+			gen_t step2;
+			step1.var = newvar();
+			step2.var = newvar();
+			         	
+            asprintf(&($$.code), "%s%s%s = load float* %s\n%s = fmul float %s, %s\nstore float %s, float* %s\n", $1.code, $3.code, step1.var,$$.var,step2.var,step1.var,$3.var,step2.var, $$.var);
+          }
+        }      
         break;
 
       case ADD_ASSIGN_T:
+      
+      //BUG : faire conversion apres multiplication
+
+        if($1.type == INT_T){
+          if(($3.type)==FLOAT_T){
+            gen_t conv;
+            conv.var = newvar();
+            asprintf(&(conv.code),"%s%s%s = fptosi float %s to i32\n", $1.code, $3.code,conv.var,$3.var);
+
+			gen_t step1;
+			gen_t step2;
+			step1.var = newvar();
+			step2.var = newvar();
+
+            asprintf(&($$.code), "%s%s = load i32* %s\n%s = add i32 %s, %s\nstore i32 %s, i32* %s\n", conv.code, step1.var,$$.var,step2.var,step1.var,conv.var,step2.var, $$.var);
+          } else {
+
+			gen_t step1;
+			gen_t step2;
+			step1.var = newvar();
+			step2.var = newvar();
+
+            asprintf(&($$.code), "%s%s%s = load i32* %s\n%s = add i32 %s, %s\nstore i32 %s, i32* %s\n", $1.code, $3.code, step1.var,$$.var,step2.var,step1.var,$3.var,step2.var, $$.var);
+          }
+        } else if($1.type == FLOAT_T){
+          if(($3.type)==INT_T){
+            gen_t conv;
+            conv.var = newvar();
+            asprintf(&(conv.code),  "%s%s%s = sitofp i32 %s to float\n", $1.code, $3.code, conv.var, $3.var);
+
+			gen_t step1;
+			gen_t step2;
+			step1.var = newvar();
+			step2.var = newvar();
+
+            asprintf(&($$.code), "%s%s = load float* %s\n%s = fadd float %s, %s\nstore float %s, float* %s\n", conv.code, step1.var,$$.var,step2.var,step1.var,conv.var,step2.var, $$.var);
+          } else {
+
+ 			gen_t step1;
+			gen_t step2;
+			step1.var = newvar();
+			step2.var = newvar();
+			         	
+            asprintf(&($$.code), "%s%s%s = load float* %s\n%s = fadd float %s, %s\nstore float %s, float* %s\n", $1.code, $3.code, step1.var,$$.var,step2.var,step1.var,$3.var,step2.var, $$.var);
+          }
+        }        
         break;
 
       case SUB_ASSIGN_T:
+      
+      //BUG : faire conversion apres multiplication
+
+        if($1.type == INT_T){
+          if(($3.type)==FLOAT_T){
+            gen_t conv;
+            conv.var = newvar();
+            asprintf(&(conv.code),"%s%s%s = fptosi float %s to i32\n", $1.code, $3.code,conv.var,$3.var);
+
+			gen_t step1;
+			gen_t step2;
+			step1.var = newvar();
+			step2.var = newvar();
+
+            asprintf(&($$.code), "%s%s = load i32* %s\n%s = sub i32 %s, %s\nstore i32 %s, i32* %s\n", conv.code, step1.var,$$.var,step2.var,step1.var,conv.var,step2.var, $$.var);
+          } else {
+
+			gen_t step1;
+			gen_t step2;
+			step1.var = newvar();
+			step2.var = newvar();
+
+            asprintf(&($$.code), "%s%s%s = load i32* %s\n%s = sub i32 %s, %s\nstore i32 %s, i32* %s\n", $1.code, $3.code, step1.var,$$.var,step2.var,step1.var,$3.var,step2.var, $$.var);
+          }
+        } else if($1.type == FLOAT_T){
+          if(($3.type)==INT_T){
+            gen_t conv;
+            conv.var = newvar();
+            asprintf(&(conv.code),  "%s%s%s = sitofp i32 %s to float\n", $1.code, $3.code, conv.var, $3.var);
+
+			gen_t step1;
+			gen_t step2;
+			step1.var = newvar();
+			step2.var = newvar();
+
+            asprintf(&($$.code), "%s%s = load float* %s\n%s = fsub float %s, %s\nstore float %s, float* %s\n", conv.code, step1.var,$$.var,step2.var,step1.var,conv.var,step2.var, $$.var);
+          } else {
+
+ 			gen_t step1;
+			gen_t step2;
+			step1.var = newvar();
+			step2.var = newvar();
+			         	
+            asprintf(&($$.code), "%s%s%s = load float* %s\n%s = fsub float %s, %s\nstore float %s, float* %s\n", $1.code, $3.code, step1.var,$$.var,step2.var,step1.var,$3.var,step2.var, $$.var);
+          }
+        }        
         break;
     }   
 	
@@ -274,21 +533,30 @@ assignment_operator
 
 declaration 
 : type_name declarator_list ';' {asprintf(&($$.code),"%s\n",($2.code));}
-| EXTERN type_name declarator_list ';'
+| EXTERN type_name declarator_list ';' {asprintf(&($$.code),"%s\n",($3.code));}
+//bug extern on en fait quoi ?
 ;
 
 declarator_list
 : declarator {
-    if(base_type == INT_T)
-      asprintf(&($$.code), "%s = alloca [%d x i32]", $1.var, allocation_size);
-    else
-      asprintf(&($$.code), "%s = alloca [%d x float]", $1.var, allocation_size);
+    if(base_type == INT_T){
+    	if(allocation_size==1)
+     		asprintf(&($$.code), "%s = alloca i32", $1.var);
+  		else
+  			asprintf(&($$.code), "%s = alloca [%d x i32]", $1.var, allocation_size);
+  	}
+    else{
+    	if(allocation_size==1)
+     		asprintf(&($$.code), "%s = alloca float", $1.var);
+  		else
+  			asprintf(&($$.code), "%s = alloca [%d x float]", $1.var, allocation_size);
+  	}
   }
 | declarator_list ',' declarator  {
     if(base_type == INT_T)
-      asprintf(&($$.code), "%s\n%s = alloca [%d x i32]", $1.code, $3.var, allocation_size);
+      asprintf(&($$.code), "%s%s = alloca [%d x i32]", $1.code, $3.var, allocation_size);
     else
-      asprintf(&($$.code), "%s\n%s = alloca [%d x float]", $1.code, $3.var, allocation_size);
+      asprintf(&($$.code), "%s%s = alloca [%d x float]", $1.code, $3.var, allocation_size);
   }
 ;
 
@@ -302,6 +570,7 @@ declarator
 : IDENTIFIER {
     allocation_size = 1;
     $$.var = newvar();
+    $$.name = $1;
     addtab($1, base_type, $$.var);
   }           
 | '(' declarator ')' { $$ = $2; }
@@ -310,76 +579,154 @@ declarator
     $$.var = $1.var;
   }
 | declarator '[' ']' { $$ = $1; }  
-| declarator '(' parameter_list ')' { $$ = $1 ;}  
-| declarator '(' ')' { $$ = $1 ;}             
+| declarator '(' parameter_list ')' {
+	$$ = $1;
+	asprintf(&($$.code), "(%s)",$3.code);
+}  
+| declarator '(' ')' {
+	$$ = $1;
+	asprintf(&($$.code), "()");
+}             
 ;
 
 parameter_list
-: parameter_declaration
-| parameter_list ',' parameter_declaration
+: parameter_declaration { $$ = $1;}
+| parameter_list ',' parameter_declaration {
+	asprintf(&($$.code), "%s%s\n",$1.code,$3.code);
+}
 ;
 
 parameter_declaration
-  : type_name declarator 
+  : type_name declarator {
+  	char * typeparam;
+  	if(base_type==INT_T)
+  		typeparam = "i32";
+  	else if (base_type == FLOAT_T)
+  		typeparam = "float";
+  	else
+  		printf("type de parametre de fonction non reconnu\n");
+  	asprintf(&($$.code),"%s %s",typeparam,$2.var);
+  }
 ;
 
 statement
-: compound_statement
-| expression_statement 
-| selection_statement
-| iteration_statement
-| jump_statement
+: compound_statement { $$ = $1; }  
+| expression_statement { $$ = $1; }  
+| selection_statement { $$ = $1; }  
+| iteration_statement { $$ = $1; }  
+| jump_statement { $$ = $1; }  
 ;
 
 compound_statement
-: '{' '}'
-| '{' statement_list '}' 
-| '{' declaration_list statement_list '}' { printf("%s\n",$2.code); }
+: '{' '}' {
+	asprintf(&($$.code), "\n");
+}
+| '{' statement_list '}' {
+	asprintf(&($$.code), "%s\n",$2.code);
+}
+| '{' declaration_list statement_list '}' {
+	asprintf(&($$.code), "%s%s\n",$2.code,$3.code);
+}
 ;
 
 declaration_list
 : declaration {$$=$1;}
-| declaration_list declaration { asprintf(&($$.code),"%s\n%s\n",($1.code),$2.code); }
+| declaration_list declaration { asprintf(&($$.code),"%s%s\n",($1.code),$2.code); }
 ;
 
 statement_list
-: statement
-| statement_list statement
+: statement {$$=$1; }
+| statement_list statement {
+	asprintf(&($$.code),"%s%s\n",($1.code),$2.code);
+}
 ;
 
 expression_statement
-: ';'
-| expression ';' { printf("\n%s", $1.code);}
+: ';' {$$=EMPTY;}
+| expression ';' {$$=$1;}
 ;
 
 selection_statement
-: IF '(' expression ')' statement
-| IF '(' expression ')' statement ELSE statement
-| FOR '(' expression_statement expression_statement expression ')' statement
+: IF '(' expression ')' statement{
+    char* thenif = newlabel();	
+    char* endif = newlabel();
+
+    asprintf(&($$.code),"%sbr i1 %s, label %%%s, label %%%s\n%s:\n%sbr label %%%s\n%s:\n",$3.code,$3.var,thenif,endif,thenif,$5.code,endif,endif);	
+}
+| IF '(' expression ')' statement ELSE statement{
+    char* thenif = newlabel();
+    char* elseif = newlabel();
+    char* endif = newlabel();
+
+    asprintf(&($$.code),"%sbr i1 %s, label %%%s, label %%%s\n%s:\n%sbr label %%%s\n%s:\n%sbr label %%%s\n%s:\n",$3.code,$3.var,thenif,elseif,thenif,$5.code,endif,elseif,$7.code,endif,endif);
+}
+| FOR '(' expression_statement expression_statement expression ')' statement{
+
+	char* cond = newlabel();
+	char* body = newlabel();
+	char* inc = newlabel();
+	char* end = newlabel();
+
+    asprintf(&($$.code),"%sbr label %%%s\n%s:\n%sbr i1 %s, label %%%s, label %%%s\n%s:\n%s\nbr label %%%s\n%s:\n%s\nbr label %%%s\n%s:\n",$3.code,cond,cond,$4.code,$4.var,body,end,body,$7.code,inc,inc,$5.code,cond,end);
+
+}
 ;
+
 
 iteration_statement
-: WHILE '(' expression ')' statement
-| DO statement WHILE '(' expression ')'
-;
+: WHILE '(' expression ')' statement {
+	char* cond = newlabel();
+	char* body = newlabel();
+	char* end = newlabel();
+
+	asprintf(&($$.code),"br label %%%s\n%s:%sbr i1 %s, label %%%s, label %%%s\n%s:\n%sbr label %%%s\n%s:\n",cond,cond,$3.code,$3.var,body,end,body,$5.code,cond,end);
+
+}
+| DO statement WHILE '(' expression ')' {
+	char* cond = newlabel();
+	char* body = newlabel();
+	char* end = newlabel();
+
+	asprintf(&($$.code),"br label %%%s\n%s:%sbr label %%%s\n%s:\n%sbr i1 %s, label %%%s, label %%%s\n%s:\n",body,body,$2.code,cond,cond, $5.code, $5.var,body,end,end);
+}
+
 
 jump_statement
-: RETURN ';'
-| RETURN expression ';'
+: RETURN ';' { asprintf(&($$.code),"ret i1 0\n");} 
+| RETURN expression ';' {
+	//gen_t res;
+	//res.var = newvar();
+	//bug float*
+	if($2.type == INT_T){
+		asprintf(&($$.code),"%sret i32 %s",$2.code,$2.var);		
+		//asprintf(&($$.code),"%s%s = load i32* %s\nret i32 %s",$2.code,res.var,$2.var,res.var);
+	}
+	else{
+		asprintf(&($$.code),"%sret float %s",$2.code,$2.var);		
+		//asprintf(&($$.code),"%s%s = load float* %s\nret float %s",$2.code,res.var,$2.var,res.var);
+	}
+}
 ;
 
 program 
-: external_declaration
-| program external_declaration
+: external_declaration {printf("%s",$1.code);}
+| program external_declaration {printf("%s",$2.code);}
 ;
 
 external_declaration
-: function_definition
-| declaration
+: function_definition {$$=$1;}
+| declaration {$$=$1;}
 ;
 
 function_definition
-: type_name declarator compound_statement
+: type_name declarator compound_statement {
+	$$.var = newvar();
+	char* typefonction;
+	if(base_type==INT_T) typefonction="i32";
+	else if (base_type==FLOAT_T) typefonction="float";
+	else typefonction = "void";
+	asprintf(&($$.code),"define %s @%s%s{\n%s\n}\n",typefonction,$2.name,$2.code,$3.code);
+}
 ;
 
 %%
