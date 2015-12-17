@@ -66,6 +66,7 @@ primary_expression
   gen_t g = findtab($1);
   char *nv= newvar();
   $$.var = nv;
+
   if ( g.type == INT_T){
     $$.type = INT_T;
 
@@ -93,8 +94,8 @@ primary_expression
 		asprintf(&($$.code), "%s = add i32 0, %d\n", $$.var,$1);
 	}
 | CONSTANTF {
-    $$.var = newvar(); 
-    $$.type = FLOAT_T;
+    	$$.var = newvar(); 
+    	$$.type = FLOAT_T;
 		$$.name = "";
 		asprintf(&($$.code), "%s = fadd float 0.0, %f\n", $$.var,$1);
 	}
@@ -103,8 +104,79 @@ primary_expression
 | REDUCE '(' postfix_expression ',' postfix_expression ')' { $$ = EMPTY; } 
 | IDENTIFIER '(' ')' { $$ = EMPTY; } 
 | IDENTIFIER '(' argument_expression_list ')' { $$ = EMPTY; } 
-| IDENTIFIER INC_OP  { $$ = EMPTY; } 
-| IDENTIFIER DEC_OP { $$ = EMPTY; }  
+| IDENTIFIER INC_OP {
+
+    gen_t g = findtab($1);
+    if(!isPresent(g.name)){
+    	printf("erreur : la variable n'a pas ete initialisée\n");
+    	return 0;
+    }
+
+    $$.var = g.var;
+
+    gen_t load;
+    load.var = newvar();
+
+	if(g.type == INT_T){
+		asprintf(&(load.code), "%s = load i32* %s\n", load.var,g.var);
+		$$.type = INT_T;
+
+		gen_t inc;
+		inc.var = newvar();
+		asprintf(&($$.code), "%s%s = add i32 %s, 1\nstore i32 %s, i32* %s",load.code,inc.var,load.var,inc.var,$$.var);
+		$$.name = $1;
+
+	}
+	else if(g.type==FLOAT_T){
+		asprintf(&(load.code), "%s = load float* %s\n", load.var,g.var);
+		$$.type = FLOAT_T;
+
+		gen_t inc;
+		inc.var = newvar();
+		asprintf(&($$.code), "%s%s = fadd float %s, 1.0\nstore float %s, float* %s",load.code,inc.var,load.var,inc.var,$$.var);
+		
+		$$.name = $1;
+
+	}
+	else
+		printf("operation interdite sur ce type\n");
+}
+| IDENTIFIER DEC_OP {
+    gen_t g = findtab($1);
+    if(!isPresent(g.name)){
+    	printf("erreur : la variable n'a pas ete initialisée\n");
+    	return 0;
+    }
+
+    $$.var = g.var;
+
+    gen_t load;
+    load.var = newvar();
+
+	if(g.type == INT_T){
+		asprintf(&(load.code), "%s = load i32* %s\n", load.var,g.var);
+		$$.type = INT_T;
+
+		gen_t inc;
+		inc.var = newvar();
+		asprintf(&($$.code), "%s%s = mul i32 %s, 1\nstore i32 %s, i32* %s",load.code,inc.var,load.var,inc.var,$$.var);
+		$$.name = $1;
+
+	}
+	else if(g.type==FLOAT_T){
+		asprintf(&(load.code), "%s = load float* %s\n", load.var,g.var);
+		$$.type = FLOAT_T;
+
+		gen_t inc;
+		inc.var = newvar();
+		asprintf(&($$.code), "%s%s = fmul float %s, 1.0\nstore float %s, float* %s",load.code,inc.var,load.var,inc.var,$$.var);
+		
+		$$.name = $1;
+
+	}
+	else
+		printf("operation interdite sur ce type\n");
+} 
 ;
 
 postfix_expression
@@ -116,7 +188,7 @@ postfix_expression
 			$$.var = newvar();
 			$$.name = $1.name;
 			$$.type = $1.type;
-			asprintf(&($$.code), "%s%s = getelementptr i32* %s, i32 %s\n", $3.code, $$.var, $1.var, $3.var);
+			asprintf(&($$.code), "%s%s%s = getelementptr i32* %s, i32 %s\n", $1.code,$3.code, $$.var, $1.var, $3.var);
 		}
 	}
 ;
@@ -308,14 +380,6 @@ comparison_expression
 : additive_expression {$$ = $1; }
 | additive_expression '<' additive_expression {
   $$.var = newvar();
-
-  //bug plus de load* :(
-  if($$.type == INT_T) {
-  	asprintf(&($$.code), "%s%s = load i32* %s\n", $1.code, $$.var, $1.var);
-  } else {
-  	asprintf(&($$.code), "%s%s = load float* %s\n", $1.code, $$.var, $1.var);
-  }
-
   asprintf(&($$.code),"%s%s%s = icmp slt i32 %s, %s\n",$1.code, $3.code,$$.var,$1.var,$3.var);
 }
 | additive_expression '>' additive_expression {
@@ -592,7 +656,7 @@ declarator
 parameter_list
 : parameter_declaration { $$ = $1;}
 | parameter_list ',' parameter_declaration {
-	asprintf(&($$.code), "%s%s\n",$1.code,$3.code);
+	asprintf(&($$.code), "%s, %s",$1.code,$3.code);
 }
 ;
 
@@ -622,10 +686,10 @@ compound_statement
 	asprintf(&($$.code), "\n");
 }
 | '{' statement_list '}' {
-	asprintf(&($$.code), "%s\n",$2.code);
+	asprintf(&($$.code), "%s",$2.code);
 }
 | '{' declaration_list statement_list '}' {
-	asprintf(&($$.code), "%s%s\n",$2.code,$3.code);
+	asprintf(&($$.code), "%s%s",$2.code,$3.code);
 }
 ;
 
@@ -637,7 +701,7 @@ declaration_list
 statement_list
 : statement {$$=$1; }
 | statement_list statement {
-	asprintf(&($$.code),"%s%s\n",($1.code),$2.code);
+	asprintf(&($$.code),"%s%s",($1.code),$2.code);
 }
 ;
 
