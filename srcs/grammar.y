@@ -30,6 +30,8 @@
 	gen_t newArgs[SIZE];
 	gen_t functions[SIZE];
 
+	base_t function_type;
+
 	int nbFunctions = 0;
 	int newNbDeclaration = 0;
 	int nbArgs = 0;
@@ -467,7 +469,6 @@ multiplicative_expression
 	} 
 | multiplicative_expression '*' unary_expression { 
 		gen_t g = $3;
-		printf("mul : %s %d %s %d\n",$1.var,$1.isPointer,$3.var,$3.isPointer);
 		$$.var = newvar();
 		if ($1.type==INT_T && g.type==INT_T) {
 				$$.type=INT_T;
@@ -534,6 +535,27 @@ additive_expression
 			}                  
 		} 
 	}
+| additive_expression '/' multiplicative_expression { 
+	$$.var = newvar(); 
+	if ($1.type==INT_T && $3.type==INT_T) {
+			$$.type=INT_T;
+			asprintf(&($$.code), "%s%s%s = sdiv i32 %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
+	} else if ($1.type==FLOAT_T && $3.type==FLOAT_T) {
+			$$.type=FLOAT_T;
+			asprintf(&($$.code), "%s%s%s = fdiv float %s, %s\n", $1.code, $3.code,$$.var,$1.var,$3.var);
+	} else {
+			gen_t conv;
+			conv.var = newvar();
+			$$.type=FLOAT_T;
+			if($3.type==INT_T) {
+					asprintf(&(conv.code),  "%s%s%s = sitofp i32 %s to float\n", $1.code, $3.code,conv.var,$3.var);
+					asprintf(&($$.code),    "%s%s = fdib float %s, %s\n", conv.code,$$.var,$1.var,conv.var);
+			} else if($1.type==INT_T) {
+					asprintf(&(conv.code),  "%s%s%s = sitofp i32 %s to float\n", $1.code, $3.code,conv.var,$1.var);  
+					asprintf(&($$.code),    "%s%s = fdiv float %s, %s\n", conv.code,$$.var,conv.var,$3.var);
+			}                  
+		} 
+	}
 ;
 
 comparison_expression
@@ -548,7 +570,7 @@ comparison_expression
 }
 | additive_expression LE_OP additive_expression {
   $$.var = newvar();
-  asprintf(&($$.code),"%s%s%s = icmp use i32 %s, %s\n",$1.code, $3.code,$$.var,$1.var,$3.var);
+  asprintf(&($$.code),"%s%s%s = icmp sle i32 %s, %s\n",$1.code, $3.code,$$.var,$1.var,$3.var);
 }
 | additive_expression GE_OP additive_expression {
   $$.var = newvar();
@@ -814,8 +836,8 @@ declarator_list
 
 type_name
 : VOID  {base_type = VOID_T;}
-| INT   {base_type = INT_T;}
-| FLOAT {base_type = FLOAT_T;}
+| INT   { base_type = INT_T; }
+| FLOAT {base_type = FLOAT_T; }
 ;
 
 declarator
@@ -846,7 +868,6 @@ declarator
 	for ( i=0; i<newNbDeclaration;i++){
 		addtab(currentHT,newDeclaration[i].name,newDeclaration[i].type, newDeclaration[i].var);
 		setIsPointer(currentHT,newDeclaration[i].name,0);
-		printf("ajout param %s, var %s, p? %d\n",newDeclaration[i].name,newDeclaration[i].var,newDeclaration[i].isPointer);
 	}
 	newNbDeclaration=0;
 	for(i = 0;i<nbFunctions;i++){
@@ -856,8 +877,20 @@ declarator
 
 }  
 | declarator '(' ')' {
+
+	function_type=base_type;
 	$$ = $1;
 	asprintf(&($$.code), "()");
+	hashtab * hasht = malloc(sizeof(hashtab));
+	init(hasht);
+	hasht->HT = currentHT;
+	hasht->depth = currentHT->depth + 1;
+	currentHT = hasht;
+	int i;
+	for(i = 0;i<nbFunctions;i++){
+		addtab(currentHT,functions[i].name,functions[i].type,functions[i].var);
+	}
+	nbFunctions=0;
 }             
 ;
 
@@ -870,6 +903,9 @@ parameter_list
 
 parameter_declaration
   : type_name declarator {
+
+  	function_type=base_type;
+
   	char * typeparam;
   	if(base_type==INT_T)
   		typeparam = "i32";
@@ -993,11 +1029,12 @@ external_declaration
 
 function_definition
 : type_name declarator compound_statement {
+
 	$$.var = newvar();
 	char* typefonction;
-	if(base_type==INT_T) typefonction="i32";
-	else if (base_type==FLOAT_T) typefonction="float";
-	else typefonction = "void";
+	if(function_type==INT_T){ typefonction="i32";}
+	else if (function_type==FLOAT_T){ typefonction="float";}
+	else{ typefonction = "void";}
 
 	asprintf(&($$.code),"define %s @%s%s{\n%s\n}\n",typefonction,$2.name,$2.code,$3.code);
 
