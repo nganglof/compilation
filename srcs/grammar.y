@@ -20,12 +20,21 @@
       char *s = NULL;
       asprintf(&s,"label%d",i++);
       return s;
-    }    
+    } 
 
-    gen_t EMPTY= {"", INT_T, "" } ;
+    gen_t EMPTY= {"", INT_T, "","",0} ;
     base_t base_type;
     int allocation_size;
-		char * offset_var;
+	char * offset_var;
+	gen_t newDeclaration[SIZE];
+	gen_t newArgs[SIZE];
+	gen_t functions[SIZE];
+
+	int nbFunctions = 0;
+	int newNbDeclaration = 0;
+	int nbArgs = 0;
+
+
 %}
 
 %token <string> IDENTIFIER
@@ -62,120 +71,240 @@
 primary_expression
 : IDENTIFIER  {
 
+  gen_t g = findtab(currentHT,$1);
 
-  gen_t g = findtab($1);
-  char *nv= newvar();
-  $$.var = nv;
+  if(!isPresent(currentHT,g.name)){
+  		printf("%s : variable non initialisée\n",$1);
+  		return 0;
+  }
+  else if (g.isPointer){
 
-  if ( g.type == INT_T){
-    $$.type = INT_T;
-
-    asprintf(&($$.code), "%s = load i32* %s\n", nv,g.var);
+	  char *nv= newvar();
+	  $$.var = nv;
+	  $$.name = $1;
+	  
+	  	if ( g.type == INT_T){
+	    	$$.type = INT_T;
+	    	asprintf(&($$.code), "%s = load i32* %s\n", nv,g.var);
+	  	}
+	  	else{
+	    	$$.type = FLOAT_T;
+	    	asprintf(&($$.code), "%s = load float* %s\n", nv,g.var);
+	  	}
   }
   else{
-    $$.type = FLOAT_T;
-    asprintf(&($$.code), "%s = load float* %s\n", nv,g.var);
+	  	$$.code="";
+	  	$$.var = g.var;
+	  	$$.name = $1;
+	  	if ( g.type == INT_T){
+	    	$$.type = INT_T;
+	  	}
+	  	else{
+	    	$$.type = FLOAT_T;
+	  	}
   }
-   $$.name = $1;
-		/*if(isPresent($1)) {
-			gen_t g = findtab($1);
-			$$.var = g.var;
-			$$.type = g.type;
-			$$.name = g.name;
-			$$.code = "";
-		} else {
-			printf("ERREUR : variable non initialisée\n");
-		}*/
-	}
+}
 | CONSTANTI {
 		$$.var = newvar(); 
 		$$.type = INT_T;
 		$$.name = "";
+		$$.isPointer = 0;
 		asprintf(&($$.code), "%s = add i32 0, %d\n", $$.var,$1);
 	}
 | CONSTANTF {
     	$$.var = newvar(); 
     	$$.type = FLOAT_T;
 		$$.name = "";
+		$$.isPointer = 0;
 		asprintf(&($$.code), "%s = fadd float 0.0, %f\n", $$.var,$1);
 	}
 | '(' expression ')' { $$ = EMPTY; } 
-| MAP '(' postfix_expression ',' postfix_expression ')' { $$ = EMPTY; } 
-| REDUCE '(' postfix_expression ',' postfix_expression ')' { $$ = EMPTY; } 
-| IDENTIFIER '(' ')' { $$ = EMPTY; } 
-| IDENTIFIER '(' argument_expression_list ')' { $$ = EMPTY; } 
+| MAP '(' postfix_expression ',' postfix_expression ')' {
+	//TODO
+} 
+| REDUCE '(' postfix_expression ',' postfix_expression ')' {
+	//TODO
+} 
+| IDENTIFIER '(' ')' { 
+	//appel fonction sans param
+
+    gen_t g = findtab(currentHT,$1);
+    if(!isPresent(currentHT,g.name)){
+    	printf("erreur : la variable n'a pas ete initialisée\n");
+    	return 0;
+    }
+
+    $$.var = newvar();
+ 	$$.type = g.type;
+ 	char * type;
+ 	if(g.type == INT_T) type = "i32";
+ 	else if(g.type == FLOAT_T) type = "float";
+ 	else type = "void";
+
+	if(g.type != VOID_T)
+	{
+		asprintf(&($$.code), "%s = call %s @%s()\n", $$.var, type, $1);
+	}
+	else
+	{
+		asprintf(&($$.code), "call %s @%s()\n", type, $1);
+	}
+} 
+| IDENTIFIER '(' argument_expression_list ')' {
+    gen_t g = findtab(currentHT,$1);
+    if(!isPresent(currentHT,g.name)){
+    	printf("erreur : la variable n'a pas ete initialisée\n");
+    	return 0;
+    }
+
+    $$.var = newvar();
+ 	$$.type = g.type;
+ 	char * type;
+ 	if(g.type == INT_T) type = "i32";
+ 	else if(g.type == FLOAT_T) type = "float";
+ 	else type = "void";
+
+   	int i;
+   	char* param = "";
+   	for ( i =0; i<nbArgs;i++){
+   		char* var = newArgs[i].var;
+   		if(newArgs[i].type == INT_T){
+   			asprintf(&(param),"%si32 %s",param,var);
+    		}
+   		else if (newArgs[i].type == FLOAT_T){
+   			asprintf(&(param),"%sfloat %s",param,var);
+    		}
+   		if (i+1<nbArgs)
+   			asprintf(&(param),"%s, ",param);
+   	}
+
+	nbArgs=0;
+
+	if(g.type != VOID_T)
+	{
+		asprintf(&($$.code), "%s%s = call %s @%s(%s)\n",$3.code, $$.var, type, $1,param);
+	}
+	else
+	{
+		asprintf(&($$.code), "%scall %s @%s(%s)\n",$3.code,type, $1,param);
+	}
+
+
+
+} 
 | IDENTIFIER INC_OP {
 
-    gen_t g = findtab($1);
-    if(!isPresent(g.name)){
+
+    gen_t g = findtab(currentHT,$1);
+    if(!isPresent(currentHT,g.name)){
     	printf("erreur : la variable n'a pas ete initialisée\n");
     	return 0;
     }
+  	else if (g.isPointer){
 
-    $$.var = g.var;
+	    $$.var = g.var;
 
-    gen_t load;
-    load.var = newvar();
+	    gen_t load;
+	    load.var = newvar();
 
-	if(g.type == INT_T){
-		asprintf(&(load.code), "%s = load i32* %s\n", load.var,g.var);
-		$$.type = INT_T;
+		if(g.type == INT_T){
+			asprintf(&(load.code), "%s = load i32* %s\n", load.var,g.var);
+			$$.type = INT_T;
 
-		gen_t inc;
-		inc.var = newvar();
-		asprintf(&($$.code), "%s%s = add i32 %s, 1\nstore i32 %s, i32* %s",load.code,inc.var,load.var,inc.var,$$.var);
-		$$.name = $1;
+			gen_t inc;
+			inc.var = newvar();
+			asprintf(&($$.code), "%s%s = add i32 %s, 1\nstore i32 %s, i32* %s\n",load.code,inc.var,load.var,inc.var,$$.var);
+			$$.name = $1;
 
+		}
+		else if(g.type==FLOAT_T){
+			asprintf(&(load.code), "%s = load float* %s\n", load.var,g.var);
+			$$.type = FLOAT_T;
+
+			gen_t inc;
+			inc.var = newvar();
+			asprintf(&($$.code), "%s%s = fadd float %s, 1.0\nstore float %s, float* %s\n",load.code,inc.var,load.var,inc.var,$$.var);
+			
+			$$.name = $1;
+
+		}
+		else
+			printf("operation interdite sur ce type\n");
 	}
-	else if(g.type==FLOAT_T){
-		asprintf(&(load.code), "%s = load float* %s\n", load.var,g.var);
-		$$.type = FLOAT_T;
-
-		gen_t inc;
-		inc.var = newvar();
-		asprintf(&($$.code), "%s%s = fadd float %s, 1.0\nstore float %s, float* %s",load.code,inc.var,load.var,inc.var,$$.var);
-		
-		$$.name = $1;
-
-	}
-	else
-		printf("operation interdite sur ce type\n");
+  	else{
+	  	$$.var = newvar();
+	  	$$.type = g.type;
+	  	if ( g.type == INT_T){
+			gen_t inc;
+			inc.var = newvar();
+			asprintf(&($$.code), "%s = add i32 %s, 1\n%s = add i32 0, %s\n",inc.var,g.var,$$.var,inc.var);
+			$$.name = $1;
+	  	}
+	  	else{
+			gen_t inc;
+			inc.var = newvar();
+			asprintf(&($$.code), "%s = fadd float %s, 1.0\n%s = add i32 0, %s\n",inc.var,g.var,$$.var,inc.var);
+			
+			$$.name = $1;
+	  	}
+	  	setVar(currentHT,$$.name,$$.var);
+  	}
 }
 | IDENTIFIER DEC_OP {
-    gen_t g = findtab($1);
-    if(!isPresent(g.name)){
+    gen_t g = findtab(currentHT,$1);
+    if(!isPresent(currentHT,g.name)){
     	printf("erreur : la variable n'a pas ete initialisée\n");
     	return 0;
     }
+  	else if (g.isPointer){
 
-    $$.var = g.var;
+	    $$.var = g.var;
 
-    gen_t load;
-    load.var = newvar();
+	    gen_t load;
+	    load.var = newvar();
 
-	if(g.type == INT_T){
-		asprintf(&(load.code), "%s = load i32* %s\n", load.var,g.var);
-		$$.type = INT_T;
+		if(g.type == INT_T){
+			asprintf(&(load.code), "%s = load i32* %s\n", load.var,g.var);
+			$$.type = INT_T;
 
-		gen_t inc;
-		inc.var = newvar();
-		asprintf(&($$.code), "%s%s = mul i32 %s, 1\nstore i32 %s, i32* %s",load.code,inc.var,load.var,inc.var,$$.var);
-		$$.name = $1;
+			gen_t inc;
+			inc.var = newvar();
+			asprintf(&($$.code), "%s%s = sub i32 %s, 1\nstore i32 %s, i32* %s\n",load.code,inc.var,load.var,inc.var,$$.var);
+			$$.name = $1;
 
+		}
+		else if(g.type==FLOAT_T){
+			asprintf(&(load.code), "%s = load float* %s\n", load.var,g.var);
+			$$.type = FLOAT_T;
+
+			gen_t inc;
+			inc.var = newvar();
+			asprintf(&($$.code), "%s%s = fsub float %s, 1.0\nstore float %s, float* %s\n",load.code,inc.var,load.var,inc.var,$$.var);
+			
+			$$.name = $1;
+
+		}
+		else
+			printf("operation interdite sur ce type\n");
 	}
-	else if(g.type==FLOAT_T){
-		asprintf(&(load.code), "%s = load float* %s\n", load.var,g.var);
-		$$.type = FLOAT_T;
-
-		gen_t inc;
-		inc.var = newvar();
-		asprintf(&($$.code), "%s%s = fmul float %s, 1.0\nstore float %s, float* %s",load.code,inc.var,load.var,inc.var,$$.var);
-		
-		$$.name = $1;
-
-	}
-	else
-		printf("operation interdite sur ce type\n");
+  	else{
+	  	$$.var = newvar();
+	  	$$.type = g.type;
+	  	if ( g.type == INT_T){
+			gen_t inc;
+			inc.var = newvar();
+			asprintf(&($$.code), "%s = sub i32 %s, 1\n%s = add i32 0, %s\n",inc.var,g.var,$$.var,inc.var);
+			$$.name = $1;
+	  	}
+	  	else{
+			gen_t inc;
+			inc.var = newvar();
+			asprintf(&($$.code), "%s = fsub float %s, 1.0\n%s = add i32 0, %s\n",inc.var,g.var,$$.var,inc.var);
+			
+			$$.name = $1;
+	  	}
+	  	setVar(currentHT,$$.name,$$.var);
+  	}
 } 
 ;
 
@@ -194,10 +323,24 @@ postfix_expression
 ;
 
 argument_expression_list
-: expression { $$ = $1; }
+: expression { $$ = $1;
+	gen_t arg;
+	arg.var = $1.var;
+	arg.name = $1.name;
+	arg.type = $1.type;
+	newArgs[nbArgs]=arg;
+	nbArgs++;
+}
 | argument_expression_list ',' expression {
 	$$.var = newvar(); 
-	asprintf(&($$.code), "%s%s\n",$1.code,$3.code);
+	asprintf(&($$.code), "%s%s",$1.code,$3.code);
+
+	gen_t arg;
+	arg.var = $3.var;
+	arg.name = $3.name;
+	arg.type = $3.type;
+	newArgs[nbArgs]=arg;
+	nbArgs++;
 }
 ;
 
@@ -205,61 +348,98 @@ unary_expression
 : postfix_expression { $$ = $1; }
 | INC_OP unary_expression {
 
-	//bug et si pas present ?
-    gen_t unary = findtab($2.name);
+    gen_t unary = findtab(currentHT,$2.name);
     $$.var = unary.var;
 
 
 	if($2.type == INT_T){
+		if (unary.isPointer){
+			gen_t inc;
+			inc.var = newvar();
+			asprintf(&($$.code), "%s%s = add i32 %s, 1\nstore i32 %s, i32* %s\n",$2.code,inc.var,$2.var,inc.var,$$.var);
+			
+			$$.name = $2.name;
+		}
+		else{
+			gen_t inc;
+			inc.var = newvar();
+			$$.var = newvar();
 
-		// bug plus de code dans unary...
-		//gen_t load;
-		//load.var = newvar();
-		gen_t inc;
-		inc.var = newvar();
-		//asprintf(&($$.code), "%s = load i32* %s\n%s = add i32 %s, 1\nstore i32 %s, i32* %s", load.var,$2.var,inc.var,load.var,inc.var,$$.var);
-		asprintf(&($$.code), "%s%s = add i32 %s, 1\nstore i32 %s, i32* %s",$2.code,inc.var,$2.var,inc.var,$$.var);
-		
-		$$.name = $2.name;
+			asprintf(&($$.code), "%s%s = add i32 %s, 1\n%s = add i32 0, %s\n",$2.code,inc.var,$2.var,$$.var,inc.var);
+			
+			$$.name = $2.name;
+	  		setVar(currentHT,$$.name,$$.var);
+	  	}
 
 	}
 	else if($2.type==FLOAT_T){
 
-		// bug plus de code dans unary...
-		//gen_t load;
-		//load.var = newvar();
-		gen_t inc;
-		inc.var = newvar();
-		//asprintf(&($$.code), "%s = load float* %s\n%s = fadd float %s, 1.0\nstore float %s, float* %s", load.var,$2.var,inc.var,load.var,inc.var,$$.var);
-		asprintf(&($$.code), "%s%s = fadd float %s, 1.0\nstore float %s, float* %s",$2.code, inc.var,$2.var,inc.var,$$.var);
-		
-		$$.name = $2.name;
+		if(unary.isPointer){
+			gen_t inc;
+			inc.var = newvar();
+			asprintf(&($$.code), "%s%s = fadd float %s, 1.0\nstore float %s, float* %s\n",$2.code, inc.var,$2.var,inc.var,$$.var);
+			
+			$$.name = $2.name;
+		}
+		else{
+			gen_t inc;
+			inc.var = newvar();
+			$$.var = newvar();
+
+			asprintf(&($$.code), "%s%s = fadd float %s, 1.0\n%s = add i32 0, %s\n",$2.code,inc.var,$2.var,$$.var,inc.var);
+			
+			$$.name = $2.name;
+	  		setVar(currentHT,$$.name,$$.var);
+	  	}		
 
 	}
 	else
 		printf("operation interdite sur ce type\n");
 }
 | DEC_OP unary_expression {	
-	if($2.type == INT_T){
+    gen_t unary = findtab(currentHT,$2.name);
+    $$.var = unary.var;
 
-		// bug plus de code dans unary...
-		gen_t load;
-		load.var = newvar();
-		gen_t inc;
-		inc.var = newvar();
-		asprintf(&($$.code), "%s = load i32* %s\n%s = sub i32 %s, 1\nstore i32 %s, i32* %s", load.var,$2.var,inc.var,load.var,inc.var,$$.var);
-		$$.name = $2.name;
+
+	if($2.type == INT_T){
+		if (unary.isPointer){
+			gen_t inc;
+			inc.var = newvar();
+			asprintf(&($$.code), "%s%s = sub i32 %s, 1\nstore i32 %s, i32* %s\n",$2.code,inc.var,$2.var,inc.var,$$.var);
+			
+			$$.name = $2.name;
+		}
+		else{
+			gen_t inc;
+			inc.var = newvar();
+			$$.var = newvar();
+
+			asprintf(&($$.code), "%s%s = sub i32 %s, 1\n%s = add i32 0, %s\n",$2.code,inc.var,$2.var,$$.var,inc.var);
+			
+			$$.name = $2.name;
+	  		setVar(currentHT,$$.name,$$.var);
+	  	}
 
 	}
 	else if($2.type==FLOAT_T){
 
-		// bug plus de code dans unary...
-		gen_t load;
-		load.var = newvar();
-		gen_t inc;
-		inc.var = newvar();
-		asprintf(&($$.code), "%s = load float* %s\n%s = fsub float %s, 1.0\nstore float %s, float* %s", load.var,$2.var,inc.var,load.var,inc.var,$$.var);
-		$$.name = $2.name;
+		if(unary.isPointer){
+			gen_t inc;
+			inc.var = newvar();
+			asprintf(&($$.code), "%s%s = fsub float %s, 1.0\nstore float %s, float* %s\n",$2.code, inc.var,$2.var,inc.var,$$.var);
+			
+			$$.name = $2.name;
+		}
+		else{
+			gen_t inc;
+			inc.var = newvar();
+			$$.var = newvar();
+
+			asprintf(&($$.code), "%s%s = fsub float %s, 1.0\n%s = add i32 0, %s\n",$2.code,inc.var,$2.var,$$.var,inc.var);
+			
+			$$.name = $2.name;
+	  		setVar(currentHT,$$.name,$$.var);
+	  	}		
 
 	}
 	else
@@ -283,31 +463,11 @@ unary_operator
 
 multiplicative_expression
 : unary_expression {
-		/*if(strcmp($1.name, "")) {
-			$$.var = newvar();
-			$$.name = $1.name;
-			$$.type = $1.type;
-			if($$.type == INT_T) {
-				asprintf(&($$.code), "%s%s = load i32* %s\n", $1.code, $$.var, $1.var);
-			} else {
-				asprintf(&($$.code), "%s%s = load float* %s\n", $1.code, $$.var, $1.var);
-			}
-
-		}*/
 		$$ = $1;
 	} 
 | multiplicative_expression '*' unary_expression { 
 		gen_t g = $3;
-		if(strcmp(g.name, "")) {
-			g.var = newvar();
-			g.type = $3.type;
-			if(g.type == INT_T) {
-				asprintf(&(g.code), "%s%s = load i32* %s\n", $3.code, g.var, $3.var);
-			} else {
-				asprintf(&(g.code), "%s%s = load float* %s\n", $3.code, g.var, $3.var);
-			}
-		}
-
+		printf("mul : %s %d %s %d\n",$1.var,$1.isPointer,$3.var,$3.isPointer);
 		$$.var = newvar();
 		if ($1.type==INT_T && g.type==INT_T) {
 				$$.type=INT_T;
@@ -406,11 +566,8 @@ comparison_expression
 
 expression
 : unary_expression assignment_operator comparison_expression {
-    gen_t unary = findtab($1.name);
+    gen_t unary = findtab(currentHT,$1.name);
     $$.var = unary.var;
-    	//bug attention $$.var -> $1;var
-		//asprintf(&($$.code), "%s%s%s = getelementptr i32* %s, i32 %s\n", $1.code, $3.code, $$.var, $1.var, $3.var);
-
     switch($2) {
       case ASSIGN_T:
         if($1.type == INT_T){
@@ -436,8 +593,6 @@ expression
 
       case MUL_ASSIGN_T:
       
-      //BUG : faire conversion apres multiplication
-
         if($1.type == INT_T){
           if(($3.type)==FLOAT_T){
             gen_t conv;
@@ -485,8 +640,6 @@ expression
 
       case ADD_ASSIGN_T:
       
-      //BUG : faire conversion apres multiplication
-
         if($1.type == INT_T){
           if(($3.type)==FLOAT_T){
             gen_t conv;
@@ -534,8 +687,6 @@ expression
 
       case SUB_ASSIGN_T:
       
-      //BUG : faire conversion apres multiplication
-
         if($1.type == INT_T){
           if(($3.type)==FLOAT_T){
             gen_t conv;
@@ -582,8 +733,6 @@ expression
         break;
     }   
 	
-		//printf("EXPRESSION: <%s>\n", $$.code);
-
   }
 | comparison_expression {$$ = $1 ;}
 ;
@@ -596,9 +745,48 @@ assignment_operator
 ;
 
 declaration 
-: type_name declarator_list ';' {asprintf(&($$.code),"%s\n",($2.code));}
-| EXTERN type_name declarator_list ';' {asprintf(&($$.code),"%s\n",($3.code));}
-//bug extern on en fait quoi ?
+: type_name declarator_list ';' {
+
+	//ajout dans hashtab
+
+	hashtab * hasht = malloc(sizeof(hashtab));
+	init(hasht);
+
+	hasht->HT = currentHT;
+	hasht->depth = currentHT->depth + 1;
+
+	int i;
+	for (i=0;i<newNbDeclaration;i++){
+		addtab(currentHT,newDeclaration[i].name, newDeclaration[i].type, newDeclaration[i].var);
+	}
+	newNbDeclaration=0;
+	for(i = 0;i<nbFunctions;i++){
+		addtab(currentHT,functions[i].name,functions[i].type,functions[i].var);
+	}
+	nbFunctions=0;
+
+	asprintf(&($$.code),"%s\n",($2.code));
+}
+| EXTERN type_name declarator_list ';' {
+	asprintf(&($$.code),"%s\n",($3.code));
+
+	//fermeture hashtab de la declaration extern
+	hashtab * tempHT = currentHT;
+	currentHT = currentHT->HT;
+	free(tempHT);
+
+	int i;
+	for (i=0;i<newNbDeclaration;i++){
+		addtab(currentHT,newDeclaration[i].name, newDeclaration[i].type, newDeclaration[i].var);
+	}
+	newNbDeclaration=0;
+
+	for(i = 0;i<nbFunctions;i++){
+		addtab(currentHT,functions[i].name,functions[i].type,functions[i].var);
+	}
+	nbFunctions=0;
+}
+
 ;
 
 declarator_list
@@ -618,9 +806,9 @@ declarator_list
   }
 | declarator_list ',' declarator  {
     if(base_type == INT_T)
-      asprintf(&($$.code), "%s%s = alloca [%d x i32]", $1.code, $3.var, allocation_size);
+      asprintf(&($$.code), "%s\n%s = alloca i32", $1.code, $3.var);
     else
-      asprintf(&($$.code), "%s%s = alloca [%d x float]", $1.code, $3.var, allocation_size);
+      asprintf(&($$.code), "%s\n%s = alloca float", $1.code, $3.var);
   }
 ;
 
@@ -635,7 +823,7 @@ declarator
     allocation_size = 1;
     $$.var = newvar();
     $$.name = $1;
-    addtab($1, base_type, $$.var);
+    addtab(currentHT,$1, base_type, $$.var);
   }           
 | '(' declarator ')' { $$ = $2; }
 | declarator '[' CONSTANTI ']' {
@@ -644,8 +832,28 @@ declarator
   }
 | declarator '[' ']' { $$ = $1; }  
 | declarator '(' parameter_list ')' {
+
 	$$ = $1;
 	asprintf(&($$.code), "(%s)",$3.code);
+	hashtab * hasht = malloc(sizeof(hashtab));
+	init(hasht);
+	hasht->HT = currentHT;
+	hasht->depth = currentHT->depth + 1;
+	currentHT = hasht;
+	//ajout hashtab
+
+	int i;
+	for ( i=0; i<newNbDeclaration;i++){
+		addtab(currentHT,newDeclaration[i].name,newDeclaration[i].type, newDeclaration[i].var);
+		setIsPointer(currentHT,newDeclaration[i].name,0);
+		printf("ajout param %s, var %s, p? %d\n",newDeclaration[i].name,newDeclaration[i].var,newDeclaration[i].isPointer);
+	}
+	newNbDeclaration=0;
+	for(i = 0;i<nbFunctions;i++){
+		addtab(currentHT,functions[i].name,functions[i].type,functions[i].var);
+	}
+	nbFunctions=0;
+
 }  
 | declarator '(' ')' {
 	$$ = $1;
@@ -670,11 +878,18 @@ parameter_declaration
   	else
   		printf("type de parametre de fonction non reconnu\n");
   	asprintf(&($$.code),"%s %s",typeparam,$2.var);
+  	gen_t param;
+  	param.type = base_type;
+  	param.var = $2.var;
+  	param.name = $2.name;
+  	//TODO : ajout hashtab
+  	newDeclaration[newNbDeclaration]=param;
+  	newNbDeclaration++;
   }
 ;
 
 statement
-: compound_statement { $$ = $1; }  
+: compound_statement { $$ = $1; }   
 | expression_statement { $$ = $1; }  
 | selection_statement { $$ = $1; }  
 | iteration_statement { $$ = $1; }  
@@ -688,7 +903,7 @@ compound_statement
 | '{' statement_list '}' {
 	asprintf(&($$.code), "%s",$2.code);
 }
-| '{' declaration_list statement_list '}' {
+| '{' declaration_list statement_list '}' {     
 	asprintf(&($$.code), "%s%s",$2.code,$3.code);
 }
 ;
@@ -699,7 +914,7 @@ declaration_list
 ;
 
 statement_list
-: statement {$$=$1; }
+: statement {$$=$1;}
 | statement_list statement {
 	asprintf(&($$.code),"%s%s",($1.code),$2.code);
 }
@@ -714,7 +929,6 @@ selection_statement
 : IF '(' expression ')' statement{
     char* thenif = newlabel();	
     char* endif = newlabel();
-
     asprintf(&($$.code),"%sbr i1 %s, label %%%s, label %%%s\n%s:\n%sbr label %%%s\n%s:\n",$3.code,$3.var,thenif,endif,thenif,$5.code,endif,endif);	
 }
 | IF '(' expression ')' statement ELSE statement{
@@ -758,16 +972,11 @@ iteration_statement
 jump_statement
 : RETURN ';' { asprintf(&($$.code),"ret i1 0\n");} 
 | RETURN expression ';' {
-	//gen_t res;
-	//res.var = newvar();
-	//bug float*
 	if($2.type == INT_T){
 		asprintf(&($$.code),"%sret i32 %s",$2.code,$2.var);		
-		//asprintf(&($$.code),"%s%s = load i32* %s\nret i32 %s",$2.code,res.var,$2.var,res.var);
 	}
 	else{
 		asprintf(&($$.code),"%sret float %s",$2.code,$2.var);		
-		//asprintf(&($$.code),"%s%s = load float* %s\nret float %s",$2.code,res.var,$2.var,res.var);
 	}
 }
 ;
@@ -789,7 +998,24 @@ function_definition
 	if(base_type==INT_T) typefonction="i32";
 	else if (base_type==FLOAT_T) typefonction="float";
 	else typefonction = "void";
+
 	asprintf(&($$.code),"define %s @%s%s{\n%s\n}\n",typefonction,$2.name,$2.code,$3.code);
+
+	gen_t func;
+	func.var = $$.var;
+	func.name = $2.name;
+	func.type = base_type;
+	functions[nbFunctions]=func;
+	nbFunctions++;
+
+	//fermeture hashtab liée a la fonction
+	hashtab* tempHT = currentHT;
+	currentHT = currentHT->HT;
+	free(tempHT);
+	int i;
+	for(i = 0;i<nbFunctions;i++){
+		addtab(currentHT,functions[i].name,functions[i].type,functions[i].var);
+	}
 }
 ;
 
@@ -816,8 +1042,6 @@ int main (int argc, char *argv[]) {
 
 
     FILE *input = NULL;
-    
-    init();
 
     if (argc==2) {
 	input = fopen (argv[1], "r");
@@ -834,6 +1058,15 @@ int main (int argc, char *argv[]) {
 	fprintf (stderr, "%s: error: no input file\n", *argv);
 	return 1;
     }
+
+    
+    mainHT = malloc(sizeof(hashtab));
+    currentHT = malloc(sizeof(hashtab));
+
+    init(mainHT);
+    currentHT = mainHT;
+    currentHT->depth = 0;
+
     yyparse ();
     free (file_name);
     return 0;
